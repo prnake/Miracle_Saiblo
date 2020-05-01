@@ -2,6 +2,7 @@
 #include "gameunit.h"
 #include "card.hpp"
 #include "calculator.h"
+#include "points.h"
 
 #include <fstream>
 #include <stdlib.h>
@@ -32,13 +33,15 @@ class AI : public AiClient
 private:
     Pos miracle_pos;
 
-    Pos enemy_pos;
+    Pos enemy_miracle_pos;
 
     Pos target_barrack;
 
-    Pos my_barrack, enermy_barrack, right_barrack, left_barrack;
+    Pos my_barrack, enemy_barrack, right_barrack, left_barrack;
 
-    Pos posShift(Pos pos, string direct);
+    Pos posShift(Pos pos, string direct, const int &lenth);
+
+    Pos counter(vector<Pos> &pos_list, string type, int number, int range);
 
 public:
     //选择初始卡组
@@ -59,9 +62,22 @@ void AI::chooseCards()
      * artifacts和creatures可以修改
      * 【进阶】在选择卡牌时，就已经知道了自己的所在阵营和先后手，因此可以在此处根据先后手的不同设置不同的卡组和神器
      */
-    my_artifacts = {"HolyLight"};
-    my_creatures = {"Archer", "Swordsman", "VolcanoDragon"};
-    init();
+
+    //先手，选择地狱火，弓箭手，牧师，冰冻龙
+    if (my_camp == 0)
+    {
+        my_artifacts = {"InfernoFlame"};
+        my_creatures = {"Archer", "Priest", "FrostDragon"};
+        init();
+    }
+    //后手，选择地狱火，弓箭手，牧师，冰冻龙（后期改动）
+    else
+    {
+        my_artifacts = {"InfernoFlame"};
+        my_creatures = {"Archer", "Priest", "FrostDragon"};
+        init();
+    }
+        
 }
 
 void AI::play()
@@ -78,42 +94,54 @@ void AI::play()
     if (round == 0 || round == 1)
     {
         //先确定自己的基地、对方的基地
-        miracle_pos = map.miracles[my_camp].pos;
-        enemy_pos = map.miracles[my_camp ^ 1].pos;
+        if (my_camp==0)
+        {
+            miracle_pos = map.miracles[0].pos;
+            enemy_miracle_pos = map.miracles[1].pos;
+            my_barrack = map.barracks[3].pos;
+            enemy_barrack = map.barracks[2].pos;
+            left_barrack = map.barracks[0].pos;
+            right_barrack = map.barracks[1].pos;
+        }
+        else
+        {
+            miracle_pos = map.miracles[1].pos;
+            enemy_miracle_pos = map.miracles[0].pos;
+            my_barrack = map.barracks[2].pos;
+            enemy_barrack = map.barracks[3].pos;
+            left_barrack = map.barracks[1].pos;
+            right_barrack = map.barracks[0].pos;
+        }
+
         //设定目标驻扎点为最近的驻扎点
+        target_barrack = my_barrack;
 
-        my_barrack = map.barracks[0].pos;
-
-        target_barrack = map.barracks[0].pos;
-        //确定离自己基地最近的驻扎点的位置
+        /*
         for (const auto &barrack : map.barracks)
         {
             if (cube_distance(miracle_pos, barrack.pos) <
                 cube_distance(miracle_pos, target_barrack))
                 target_barrack = barrack.pos;
         }
+        */
 
-        // 在正中心偏右召唤一个弓箭手，用来抢占驻扎点
-        summon("Archer", 1, posShift(miracle_pos, "SF"));
+        // 在正中心偏右召唤一个牧师，用来抢占驻扎点
+        summon("Priest", 1, posShift(miracle_pos, "SF",1));
     }
     else
     {
         //神器能用就用，选择覆盖单位数最多的地点
-        if (players[my_camp].mana >= 6 && players[my_camp].artifact[0].state == "Ready")
+        if (players[my_camp].mana >= 8 && players[my_camp].artifact[0].state == "Ready")
         {
             auto pos_list = all_pos_in_map();
-            auto best_pos = pos_list[0];
-            int max_benefit = 0;
+            vector<Pos> postions;
             for (auto pos : pos_list)
             {
-                auto unit_list = units_in_range(pos, 2, map, my_camp);
-                if (unit_list.size() > max_benefit)
-                {
-                    best_pos = pos;
-                    max_benefit = unit_list.size();
-                }
+                if (canUseArtifact(players[my_camp].artifact[0], pos, my_camp))
+                    postions.push_back(pos);
             }
-            use(players[my_camp].artifact[0].id, best_pos);
+            Pos decide_pos = counter(postions, "inferno_flame", 2, 2);
+            use(players[my_camp].artifact[0].id, decide_pos);
         }
 
         //之后先战斗，再移动
@@ -125,7 +153,7 @@ void AI::play()
         //将所有本方出兵点按照到对方基地的距离排序，从近到远出兵
         auto summon_pos_list = getSummonPosByCamp(my_camp);
         sort(summon_pos_list.begin(), summon_pos_list.end(), [this](Pos _pos1, Pos _pos2) {
-            return cube_distance(_pos1, enemy_pos) < cube_distance(_pos2, enemy_pos);
+            return cube_distance(_pos1, enemy_miracle_pos) < cube_distance(_pos2, enemy_miracle_pos);
         });
         vector<Pos> available_summon_pos_list;
         for (auto pos : summon_pos_list)
@@ -188,6 +216,50 @@ void AI::play()
         }
     }
     endRound();
+}
+
+Pos AI::counter(vector<Pos>& pos_list, string type, int number, int range)
+{
+    std::map<Pos, int> map_counter;
+    if (type == "most_enermy")
+    {
+        for (auto pos : pos_list)
+        {
+            auto unit_list = units_in_range(pos, range, map, my_camp^1);
+            map_counter[pos] = unit_list.size();
+        }
+    }
+
+    else if (type == "inferno_flame")
+    {
+        for (auto pos : pos_list)
+        {
+            int score = 0;
+            auto unit_list = units_in_range(pos, range, map, my_camp ^ 1);
+            for(auto unit:unit_list)
+            {
+                if (unit.hp <= number)
+                    score += unit.level * ENEMY_DEATH;
+                else
+                    score += number * ENEMY_HURT;
+            }
+            score += (20 - cube_distance(pos, enemy_miracle_pos)) * ENEMY_MIRCLE;
+            map_counter[pos] = score;
+        }
+    }
+
+    auto best_pos = pos_list[0];
+    int max_benefit = 0;
+    for (auto pos : pos_list)
+    {
+        if (map_counter[pos] > max_benefit)
+        {
+            best_pos = pos;
+            max_benefit = map_counter[pos];
+        }
+    }
+
+    return best_pos;
 }
 
 Pos AI::posShift(Pos pos, string direct,const int& lenth = 1)
@@ -321,7 +393,7 @@ void AI::battle()
     {
         if (!ally.can_atk)
             break;
-        int dis = cube_distance(ally.pos, enemy_pos);
+        int dis = cube_distance(ally.pos, enemy_miracle_pos);
         if (ally.atk_range[0] <= dis && dis <= ally.atk_range[1])
             attack(ally.id, my_camp ^ 1);
     }
@@ -371,7 +443,7 @@ void AI::march()
             //优先走到距离敌方神迹更近的位置
             nth_element(reach_pos_list.begin(), reach_pos_list.begin(), reach_pos_list.end(),
                         [this](Pos _pos1, Pos _pos2) {
-                            return cube_distance(_pos1, enemy_pos) < cube_distance(_pos2, enemy_pos);
+                            return cube_distance(_pos1, enemy_miracle_pos) < cube_distance(_pos2, enemy_miracle_pos);
                         });
             move(ally.id, reach_pos_list[0]);
         }
@@ -413,7 +485,7 @@ void AI::march()
             {
                 nth_element(reach_pos_list.begin(), reach_pos_list.begin(), reach_pos_list.end(),
                             [this](Pos _pos1, Pos _pos2) {
-                                return cube_distance(_pos1, enemy_pos) < cube_distance(_pos2, enemy_pos);
+                                return cube_distance(_pos1, enemy_miracle_pos) < cube_distance(_pos2, enemy_miracle_pos);
                             });
                 move(ally.id, reach_pos_list[0]);
             }

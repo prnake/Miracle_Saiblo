@@ -1,0 +1,3 @@
+#define ENEMY_HURT 1
+#define ENEMY_DEATH 10
+#define ENEMY_MIRCLE 5
