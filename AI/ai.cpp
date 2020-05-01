@@ -203,32 +203,32 @@ Pos AI::posShift(Pos pos, string direct,const int& lenth = 1)
     if (my_camp == 0)
     {
         if (direct == "FF") //正前方
-            return make_tuple(get<0>(pos) + 1, get<1>(pos) - 1, get<2>(pos));
+            return make_tuple(get<0>(pos) + lenth, get<1>(pos) - lenth, get<2>(pos));
         else if (direct == "SF") //优势路前方（自身视角右侧为优势路）
-            return make_tuple(get<0>(pos) + 1, get<1>(pos), get<2>(pos) - 1);
+            return make_tuple(get<0>(pos) + lenth, get<1>(pos), get<2>(pos) - lenth);
         else if (direct == "IF") //劣势路前方
-            return make_tuple(get<0>(pos), get<1>(pos) - 1, get<2>(pos) + 1);
+            return make_tuple(get<0>(pos), get<1>(pos) - lenth, get<2>(pos) + lenth);
         else if (direct == "BB") //正后方
-            return make_tuple(get<0>(pos) - 1, get<1>(pos) + 1, get<2>(pos));
+            return make_tuple(get<0>(pos) - lenth, get<1>(pos) + lenth, get<2>(pos));
         else if (direct == "SB") //优势路后方
-            return make_tuple(get<0>(pos), get<1>(pos) + 1, get<2>(pos) - 1);
+            return make_tuple(get<0>(pos), get<1>(pos) + lenth, get<2>(pos) - lenth);
         else if (direct == "IB") //劣势路后方
-            return make_tuple(get<0>(pos) - 1, get<1>(pos), get<2>(pos) + 1);
+            return make_tuple(get<0>(pos) - lenth, get<1>(pos), get<2>(pos) + lenth);
     }
     else
     {
         if (direct == "FF") //正前方
-            return make_tuple(get<0>(pos) - 1, get<1>(pos) + 1, get<2>(pos));
+            return make_tuple(get<0>(pos) - lenth, get<1>(pos) + lenth, get<2>(pos));
         else if (direct == "SF") //优势路前方（自身视角右侧为优势路）
-            return make_tuple(get<0>(pos) - 1, get<1>(pos), get<2>(pos) + 1);
+            return make_tuple(get<0>(pos) - lenth, get<1>(pos), get<2>(pos) + lenth);
         else if (direct == "IF") //劣势路前方
-            return make_tuple(get<0>(pos), get<1>(pos) + 1, get<2>(pos) - 1);
+            return make_tuple(get<0>(pos), get<1>(pos) + lenth, get<2>(pos) - lenth);
         else if (direct == "BB") //正后方
-            return make_tuple(get<0>(pos) + 1, get<1>(pos) - 1, get<2>(pos));
+            return make_tuple(get<0>(pos) + lenth, get<1>(pos) - lenth, get<2>(pos));
         else if (direct == "SB") //优势路后方
-            return make_tuple(get<0>(pos), get<1>(pos) - 1, get<2>(pos) + 1);
+            return make_tuple(get<0>(pos), get<1>(pos) - lenth, get<2>(pos) + lenth);
         else if (direct == "IB") //劣势路后方
-            return make_tuple(get<0>(pos) + 1, get<1>(pos), get<2>(pos) - 1);
+            return make_tuple(get<0>(pos) + lenth, get<1>(pos), get<2>(pos) - lenth);
     }
 }
 
