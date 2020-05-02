@@ -47,11 +47,23 @@ public:
     //选择初始卡组
     void chooseCards(); //(根据初始阵营)选择初始卡组
 
-    void play(); //玩家需要编写的ai操作函数
-    
+    void use_inferno();
+
+    void scan_enemy();
+
+    void unit_alloc_before_battle(const string &type);
+
+    void unit_alloc_after_battle(const string &type);
+
+    void creat_unit(const string &type);
+
+    void march_before_battle();
+
+    void march_after_battle();
+
     void battle(); //处理生物的战斗
 
-    void march(); //处理生物的移动
+    void play(); //玩家需要编写的ai操作函数
 };
 
 void AI::chooseCards()
@@ -131,177 +143,44 @@ void AI::play()
     else
     {
         //神器能用就用，选择覆盖单位数最多的地点
-        if (players[my_camp].mana >= 8 && players[my_camp].artifact[0].state == "Ready")
-        {
-            auto pos_list = all_pos_in_map();
-            vector<Pos> postions;
-            for (auto pos : pos_list)
-            {
-                if (canUseArtifact(players[my_camp].artifact[0], pos, my_camp))
-                    postions.push_back(pos);
-            }
-            Pos decide_pos = counter(postions, "inferno_flame", 2, 2);
-            use(players[my_camp].artifact[0].id, decide_pos);
-        }
+        use_inferno();
 
-        //之后先战斗，再移动
+        scan_enemy();
+
+        unit_alloc_before_battle("attack");
+
+        march_before_battle();
+
         battle();
 
-        march();
+        march_after_battle();
 
-        //最后进行召唤
-        //将所有本方出兵点按照到对方基地的距离排序，从近到远出兵
-        auto summon_pos_list = getSummonPosByCamp(my_camp);
-        sort(summon_pos_list.begin(), summon_pos_list.end(), [this](Pos _pos1, Pos _pos2) {
-            return cube_distance(_pos1, enemy_miracle_pos) < cube_distance(_pos2, enemy_miracle_pos);
-        });
-        vector<Pos> available_summon_pos_list;
-        for (auto pos : summon_pos_list)
-        {
-            auto unit_on_pos_ground = getUnitByPos(pos, false);
-            if (unit_on_pos_ground.id == -1)
-                available_summon_pos_list.push_back(pos);
-        }
+        creat_unit("attack");
 
-        //统计各个生物的可用数量，在假设出兵点无限的情况下，按照1个剑士、1个弓箭手、1个火山龙的顺序召唤
-        int mana = players[my_camp].mana;
-        auto deck = players[my_camp].creature_capacity;
-        ::map<string, int> available_count;
-        for (const auto &card_unit : deck)
-            available_count[card_unit.type] = card_unit.available_count;
+        unit_alloc_after_battle("attack");
 
-        vector<string> summon_list;
-        //剑士和弓箭手数量不足或者格子不足则召唤火山龙
-        if ((available_summon_pos_list.size() == 1 || available_count["Swordsman"] + available_count["Archer"] < 2) &&
-            mana >= CARD_DICT.at("VolcanoDragon")[1].cost && available_count["VolcanoDragon"] > 0)
-        {
-            summon_list.emplace_back("VolcanoDragon");
-            mana -= CARD_DICT.at("VolcanoDragon")[1].cost;
-        }
-
-        bool suc = true;
-        while (mana >= 2 && suc)
-        {
-            suc = false;
-            if (available_count["Swordsman"] > 0 && mana >= CARD_DICT.at("Swordsman")[1].cost)
-            {
-                summon_list.emplace_back("Swordsman");
-                mana -= CARD_DICT.at("Swordsman")[1].cost;
-                available_count["Swordsman"] -= 1;
-                suc = true;
-            }
-            if (available_count["Archer"] > 0 && mana >= CARD_DICT.at("Archer")[1].cost)
-            {
-                summon_list.emplace_back("Archer");
-                mana -= CARD_DICT.at("Archer")[1].cost;
-                available_count["Archer"] -= 1;
-                suc = true;
-            }
-            if (available_count["VolcanoDragon"] > 0 && mana >= CARD_DICT.at("VolcanoDragon")[1].cost)
-            {
-                summon_list.emplace_back("VolcanoDragon");
-                mana -= CARD_DICT.at("VolcanoDragon")[1].cost;
-                available_count["VolcanoDragon"] -= 1;
-                suc = true;
-            }
-        }
-
-        int i = 0;
-        for (auto pos : available_summon_pos_list)
-        {
-            if (i == summon_list.size())
-                break;
-            summon(summon_list[i], 1, pos);
-            ++i;
-        }
     }
-    endRound();
+        endRound();
 }
 
-Pos AI::counter(vector<Pos>& pos_list, string type, int number, int range)
+void AI::scan_enemy()
 {
-    std::map<Pos, int> map_counter;
-    if (type == "most_enermy")
-    {
-        for (auto pos : pos_list)
-        {
-            auto unit_list = units_in_range(pos, range, map, my_camp^1);
-            map_counter[pos] = unit_list.size();
-        }
-    }
 
-    else if (type == "inferno_flame")
-    {
-        for (auto pos : pos_list)
-        {
-            int score = 0;
-            auto unit_list = units_in_range(pos, range, map, my_camp ^ 1);
-            for(auto unit:unit_list)
-            {
-                if (unit.hp <= number)
-                    score += unit.level * ENEMY_DEATH;
-                else
-                    score += number * ENEMY_HURT;
-            }
-            score += (20 - cube_distance(pos, enemy_miracle_pos)) * ENEMY_MIRCLE;
-            map_counter[pos] = score;
-        }
-    }
-
-    auto best_pos = pos_list[0];
-    int max_benefit = 0;
-    for (auto pos : pos_list)
-    {
-        if (map_counter[pos] > max_benefit)
-        {
-            best_pos = pos;
-            max_benefit = map_counter[pos];
-        }
-    }
-
-    return best_pos;
 }
 
-Pos AI::posShift(Pos pos, string direct,const int& lenth = 1)
+void AI::unit_alloc_before_battle(const string& type)
 {
-    /*
-     * 对于给定位置，给出按照自己的视角（神迹在最下方）的某个方向移动一步后的位置
-     * 本段代码可以自由取用
-     * @param pos:  (x, y, z)
-     * @param direct: 一个str，含2个字符，意义见注释
-     * @return: 移动后的位置 (x', y', z')
-     */
-    transform(direct.begin(), direct.end(), direct.begin(), ::toupper);
-    if (my_camp == 0)
-    {
-        if (direct == "FF") //正前方
-            return make_tuple(get<0>(pos) + lenth, get<1>(pos) - lenth, get<2>(pos));
-        else if (direct == "SF") //优势路前方（自身视角右侧为优势路）
-            return make_tuple(get<0>(pos) + lenth, get<1>(pos), get<2>(pos) - lenth);
-        else if (direct == "IF") //劣势路前方
-            return make_tuple(get<0>(pos), get<1>(pos) - lenth, get<2>(pos) + lenth);
-        else if (direct == "BB") //正后方
-            return make_tuple(get<0>(pos) - lenth, get<1>(pos) + lenth, get<2>(pos));
-        else if (direct == "SB") //优势路后方
-            return make_tuple(get<0>(pos), get<1>(pos) + lenth, get<2>(pos) - lenth);
-        else if (direct == "IB") //劣势路后方
-            return make_tuple(get<0>(pos) - lenth, get<1>(pos), get<2>(pos) + lenth);
-    }
-    else
-    {
-        if (direct == "FF") //正前方
-            return make_tuple(get<0>(pos) - lenth, get<1>(pos) + lenth, get<2>(pos));
-        else if (direct == "SF") //优势路前方（自身视角右侧为优势路）
-            return make_tuple(get<0>(pos) - lenth, get<1>(pos), get<2>(pos) + lenth);
-        else if (direct == "IF") //劣势路前方
-            return make_tuple(get<0>(pos), get<1>(pos) + lenth, get<2>(pos) - lenth);
-        else if (direct == "BB") //正后方
-            return make_tuple(get<0>(pos) + lenth, get<1>(pos) - lenth, get<2>(pos));
-        else if (direct == "SB") //优势路后方
-            return make_tuple(get<0>(pos), get<1>(pos) - lenth, get<2>(pos) + lenth);
-        else if (direct == "IB") //劣势路后方
-            return make_tuple(get<0>(pos) + lenth, get<1>(pos), get<2>(pos) - lenth);
-    }
+
+}
+
+void AI::unit_alloc_after_battle(const string &type)
+{
+
+}
+
+void AI::march_before_battle()
+{
+    
 }
 
 void AI::battle()
@@ -399,7 +278,7 @@ void AI::battle()
     }
 }
 
-void AI::march()
+void AI::march_after_battle()
 {
     //处理生物的移动
 
@@ -490,6 +369,180 @@ void AI::march()
                 move(ally.id, reach_pos_list[0]);
             }
         }
+    }
+}
+
+void AI::creat_unit(const string &type)
+{
+    //最后进行召唤
+    if(type == "attack")
+    {
+        //将所有本方出兵点按照到对方基地的距离排序，从近到远出兵
+        auto summon_pos_list = getSummonPosByCamp(my_camp);
+        sort(summon_pos_list.begin(), summon_pos_list.end(), [this](Pos _pos1, Pos _pos2) {
+            return cube_distance(_pos1, enemy_miracle_pos) < cube_distance(_pos2, enemy_miracle_pos);
+        });
+        vector<Pos> available_summon_pos_list;
+        for (auto pos : summon_pos_list)
+        {
+            auto unit_on_pos_ground = getUnitByPos(pos, false);
+            if (unit_on_pos_ground.id == -1)
+                available_summon_pos_list.push_back(pos);
+        }
+
+        //统计各个生物的可用数量，在假设出兵点无限的情况下，按照1个剑士、1个弓箭手、1个火山龙的顺序召唤
+        int mana = players[my_camp].mana;
+        auto deck = players[my_camp].creature_capacity;
+        ::map<string, int> available_count;
+        for (const auto &card_unit : deck)
+            available_count[card_unit.type] = card_unit.available_count;
+
+        vector<string> summon_list;
+        //剑士和弓箭手数量不足或者格子不足则召唤火山龙
+        if ((available_summon_pos_list.size() == 1 || available_count["Swordsman"] + available_count["Archer"] < 2) &&
+            mana >= CARD_DICT.at("VolcanoDragon")[1].cost && available_count["VolcanoDragon"] > 0)
+        {
+            summon_list.emplace_back("VolcanoDragon");
+            mana -= CARD_DICT.at("VolcanoDragon")[1].cost;
+        }
+
+        bool suc = true;
+        while (mana >= 2 && suc)
+        {
+            suc = false;
+            if (available_count["Swordsman"] > 0 && mana >= CARD_DICT.at("Swordsman")[1].cost)
+            {
+                summon_list.emplace_back("Swordsman");
+                mana -= CARD_DICT.at("Swordsman")[1].cost;
+                available_count["Swordsman"] -= 1;
+                suc = true;
+            }
+            if (available_count["Archer"] > 0 && mana >= CARD_DICT.at("Archer")[1].cost)
+            {
+                summon_list.emplace_back("Archer");
+                mana -= CARD_DICT.at("Archer")[1].cost;
+                available_count["Archer"] -= 1;
+                suc = true;
+            }
+            if (available_count["VolcanoDragon"] > 0 && mana >= CARD_DICT.at("VolcanoDragon")[1].cost)
+            {
+                summon_list.emplace_back("VolcanoDragon");
+                mana -= CARD_DICT.at("VolcanoDragon")[1].cost;
+                available_count["VolcanoDragon"] -= 1;
+                suc = true;
+            }
+        }
+
+        int i = 0;
+        for (auto pos : available_summon_pos_list)
+        {
+            if (i == summon_list.size())
+                break;
+            summon(summon_list[i], 1, pos);
+            ++i;
+        }
+    }
+}
+
+Pos AI::counter(vector<Pos>& pos_list, string type, int number, int range)
+{
+    std::map<Pos, int> map_counter;
+    if (type == "most_enermy")
+    {
+        for (auto pos : pos_list)
+        {
+            auto unit_list = units_in_range(pos, range, map, my_camp^1);
+            map_counter[pos] = unit_list.size();
+        }
+    }
+
+    else if (type == "inferno_flame")
+    {
+        for (auto pos : pos_list)
+        {
+            int score = 0;
+            auto unit_list = units_in_range(pos, range, map, my_camp ^ 1);
+            for(auto unit:unit_list)
+            {
+                if (unit.hp <= number)
+                    score += unit.level * ENEMY_DEATH;
+                else
+                    score += number * ENEMY_HURT;
+            }
+            score += (20 - cube_distance(pos, enemy_miracle_pos)) * ENEMY_MIRCLE;
+            map_counter[pos] = score;
+        }
+    }
+
+    auto best_pos = pos_list[0];
+    int max_benefit = 0;
+    for (auto pos : pos_list)
+    {
+        if (map_counter[pos] > max_benefit)
+        {
+            best_pos = pos;
+            max_benefit = map_counter[pos];
+        }
+    }
+
+    return best_pos;
+}
+
+Pos AI::posShift(Pos pos, string direct,const int& lenth = 1)
+{
+    /*
+     * 对于给定位置，给出按照自己的视角（神迹在最下方）的某个方向移动一步后的位置
+     * 本段代码可以自由取用
+     * @param pos:  (x, y, z)
+     * @param direct: 一个str，含2个字符，意义见注释
+     * @return: 移动后的位置 (x', y', z')
+     */
+    transform(direct.begin(), direct.end(), direct.begin(), ::toupper);
+    if (my_camp == 0)
+    {
+        if (direct == "FF") //正前方
+            return make_tuple(get<0>(pos) + lenth, get<1>(pos) - lenth, get<2>(pos));
+        else if (direct == "SF") //优势路前方（自身视角右侧为优势路）
+            return make_tuple(get<0>(pos) + lenth, get<1>(pos), get<2>(pos) - lenth);
+        else if (direct == "IF") //劣势路前方
+            return make_tuple(get<0>(pos), get<1>(pos) - lenth, get<2>(pos) + lenth);
+        else if (direct == "BB") //正后方
+            return make_tuple(get<0>(pos) - lenth, get<1>(pos) + lenth, get<2>(pos));
+        else if (direct == "SB") //优势路后方
+            return make_tuple(get<0>(pos), get<1>(pos) + lenth, get<2>(pos) - lenth);
+        else if (direct == "IB") //劣势路后方
+            return make_tuple(get<0>(pos) - lenth, get<1>(pos), get<2>(pos) + lenth);
+    }
+    else
+    {
+        if (direct == "FF") //正前方
+            return make_tuple(get<0>(pos) - lenth, get<1>(pos) + lenth, get<2>(pos));
+        else if (direct == "SF") //优势路前方（自身视角右侧为优势路）
+            return make_tuple(get<0>(pos) - lenth, get<1>(pos), get<2>(pos) + lenth);
+        else if (direct == "IF") //劣势路前方
+            return make_tuple(get<0>(pos), get<1>(pos) + lenth, get<2>(pos) - lenth);
+        else if (direct == "BB") //正后方
+            return make_tuple(get<0>(pos) + lenth, get<1>(pos) - lenth, get<2>(pos));
+        else if (direct == "SB") //优势路后方
+            return make_tuple(get<0>(pos), get<1>(pos) - lenth, get<2>(pos) + lenth);
+        else if (direct == "IB") //劣势路后方
+            return make_tuple(get<0>(pos) + lenth, get<1>(pos), get<2>(pos) - lenth);
+    }
+}
+
+void AI::use_inferno()
+{
+    if (players[my_camp].mana >= 8 && players[my_camp].artifact[0].state == "Ready")
+    {
+        auto pos_list = all_pos_in_map();
+        vector<Pos> postions;
+        for (auto pos : pos_list)
+        {
+            if (canUseArtifact(players[my_camp].artifact[0], pos, my_camp))
+                postions.push_back(pos);
+        }
+        Pos decide_pos = counter(postions, "inferno_flame", 2, 2);
+        use(players[my_camp].artifact[0].id, decide_pos);
     }
 }
 
