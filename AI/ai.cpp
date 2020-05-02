@@ -64,7 +64,7 @@ struct unit_info
     Pos now;
     string target;              //预测行为
     string type;                //分配对策
-    int des;                    //我方单位目标 des=1,占领destination;des=2,直线进攻基地
+    int des;                    //我方单位目标 des=1,占领destination;des=2,直线进攻基地;des=3，保护神迹；des=4,保护我方驻扎点；des=5，保护对方驻扎点
     Pos destination;
 
 };
@@ -94,9 +94,19 @@ private:
 
     Pos posShift(Pos pos, string direct, const int &lenth);
 
-    Pos counter(vector<Pos> &pos_list, string type, int number, int range);
+    Pos counter(vector<Pos> &pos_list, string type);
+
+    Pos counter(vector<Pos> &pos_list, string type, Unit my_unit);
+
+    void sign_unit(int d);
+
+    void sign_unit(int d, const Pos &dest);
 
 public:
+    AI()
+    {
+        unit_extra_info.resize(2000);
+    }
     //选择初始卡组
     void chooseCards(); //(根据初始阵营)选择初始卡组
 
@@ -113,7 +123,22 @@ public:
     void battle(const string &type); //处理生物的战斗
 
     void play(); //玩家需要编写的ai操作函数
+
+    
 };
+
+void AI::sign_unit(int d)
+{
+    int id = map.units[map.units.size() - 1].id;
+    unit_extra_info[id].des = d;
+}
+
+void AI::sign_unit(int d,const Pos& dest)
+{
+    int id = map.units[map.units.size() - 1].id;
+    unit_extra_info[id].des = d;
+    unit_extra_info[id].destination = dest;
+}
 
 void AI::chooseCards()
 {
@@ -174,9 +199,6 @@ void AI::play()
             right_barrack = map.barracks[0].pos;
         }
 
-        //设定目标驻扎点为最近的驻扎点
-        target_barrack = my_barrack;
-
         /*
         for (const auto &barrack : map.barracks)
         {
@@ -188,6 +210,7 @@ void AI::play()
 
         // 在正中心偏右召唤一个牧师，用来抢占驻扎点
         summon("Priest", 1, posShift(miracle_pos, "SF",1));
+        sign_unit(1,my_barrack);
     }
     else
     {
@@ -215,8 +238,6 @@ void AI::scan_enemy()
 
     for (const auto &enemy : enemy_list)
     {
-        if(enemy.id>=unit_extra_info.size())
-            unit_extra_info.resize(enemy.id * 2);
         struct unit_info &extra = unit_extra_info.at(enemy.id);
         if(extra.creat_time == -1)
         {
@@ -224,55 +245,55 @@ void AI::scan_enemy()
             extra.now = enemy.pos;
             if (enemy.type == "Archer")
             {
-                extra.type == "attack";
-                extra.priority = enemy.level + enemy.atk;
+                extra.type = "attack";
+                extra.priority = enemy.atk;
             }
             else if (enemy.type == "Swordsman")
             {
-                extra.type == "attack";
-                extra.priority = enemy.level + enemy.atk;
+                extra.type = "attack";
+                extra.priority = enemy.atk;
             }
             else if (enemy.type == "BlackBat")
             {
-                extra.type == "attack";
-                extra.priority = enemy.level + enemy.atk;
+                extra.type = "attack";
+                extra.priority = enemy.atk;
             }
             else if (enemy.type == "Priest")
             {
-                extra.type == "attack";
-                extra.priority = enemy.level;
+                extra.type = "attack";
                 if(enemy.level==1)
                 {
                     auto atk_up_enemy = units_in_range(extra.now, 2, map, my_camp ^ 1);
-                    extra.priority += atk_up_enemy.size() * 2;
+                    extra.priority = atk_up_enemy.size() - 1;
                 }
                 else
                 {
                     auto atk_up_enemy = units_in_range(extra.now, 3, map, my_camp ^ 1);
-                    extra.priority += atk_up_enemy.size() * 2;
+                    extra.priority += atk_up_enemy.size() - 1;
                 }
             }
             else if (enemy.type == "VolcanoDragon")
             {
-                extra.type == "attack";
-                extra.priority = enemy.level + enemy.atk;
+                extra.type = "attack";
+                extra.priority = enemy.atk;
             }
             else if (enemy.type == "Inferno")
             {
                 if(cube_distance(extra.now,miracle_pos)<=3)
                 {
-                    extra.type == "attack";
-                    extra.priority = 100;
+                    extra.type = "attack";
+                    extra.target = "my_miracle";
+                    extra.priority = enemy.atk;
                 }
                 else
                 {
-                    extra.type == "avoid";
+                    extra.type = "avoid";
                     extra.priority = 2;
                 }   
             }
             else if (enemy.type == "FrostDragon")
             {
-                extra.type == "attack";
+                extra.type = "attack";
                 extra.priority = enemy.level + enemy.atk;
             }
         }
@@ -300,182 +321,32 @@ void AI::scan_enemy()
                 min = 9999;
             for (int i = 0; i < 4; i++)
             {
-                if (min > now_distance && now_distance[i] <= history_distance[i])
+                if (min > now_distance)
                 {
                     min = now_distance[i];
                     closest = i;
                 }
             }
-            if (closest == 0)
+            if (min <= enemy.atk_range[1] + enemy.max_move)
             {
-                extra.target = "enemy_miracle";
-            }
-            else if (closest == 1)
-            {
-                extra.target = "enemy_barrack";
-            }
-            else if (closest == 2)
-            {
-                extra.target = "my_barrack";
-            }
-            else if (closest == 3)
-            {
-                extra.target = "my_miracle";
-            }
-            else
-            {
-                extra.target = "chased";
-            }
-
-            if (enemy.type == "Archer")
-            {
-                if (now_distance[3]<=7)
-                {
-                    extra.target = "my_miracle";
-                }
-                else if (checkBarrack(enemy_barrack) != my_camp ^ 1 && history_distance[1] > now_distance[1])
-                {
-                    extra.target = "enemy_barrack";
-                }
-                else if (checkBarrack(my_barrack) != my_camp ^ 1 && history_distance[2] > now_distance[2])
-                {
-                    extra.target = "my_barrack";
-                }
-                extra.type == "attack";
-                extra.priority = enemy.level + enemy.atk;
-                if (now_distance[3] >= 3 &&now_distance [3] <= 4)
-                    extra.priority += enemy.atk*10;
-            }
-            else if (enemy.type == "Swordsman")
-            {
-                if (now_distance[3] <= 4)
-                {
-                    extra.target = "my_miracle";
-                }
-                else if (checkBarrack(enemy_barrack) != my_camp ^ 1 && history_distance[1] > now_distance[1])
-                {
-                    extra.target = "enemy_barrack";
-                }
-                else if (checkBarrack(my_barrack) != my_camp ^ 1 && history_distance[2] > now_distance[2])
-                {
-                    extra.target = "my_barrack";
-                }
-                extra.type == "attack";
-                extra.priority = enemy.level + enemy.atk;
-                if (now_distance[3] ==1)
-                    extra.priority += enemy.atk * 10;
-            }
-            else if (enemy.type == "BlackBat")
-            {
-                if (history_distance[3] > now_distance[3])
-                {
-                    extra.target = "my_miracle";
-                }
-                else if (now_distance[0]<=7 && history_distance[0] > now_distance[0])
+                if (closest == 0)
                 {
                     extra.target = "enemy_miracle";
                 }
-                else
-                {
-                    extra.target = "chased";
-                }
-
-                extra.type == "avoid";
-                extra.priority = enemy.level + enemy.atk;
-
-                if (now_distance[3] <= 5)
-                {
-                    extra.type == "attack";
-                    game_trend.stratergy.push_back("mircle_prevent_bat");
-                    extra.priority += enemy.atk * 10;
-                }
-                    
-            }
-            else if (enemy.type == "Priest")
-            {
-                if (checkBarrack(my_barrack) != my_camp ^ 1 && history_distance[2] > now_distance[2])
-                {
-                    extra.target = "my_barrack";
-                }
-                else if (now_distance[3] <= 4)
-                {
-                    extra.target = "my_miracle";
-                }
-                else if (checkBarrack(enemy_barrack) != my_camp ^ 1 && history_distance[1] > now_distance[1])
+                else if (closest == 1)
                 {
                     extra.target = "enemy_barrack";
                 }
-                extra.type == "attack";
-                extra.priority = enemy.level;
-                if (enemy.level == 1)
-                {
-                    auto atk_up_enemy = units_in_range(extra.now, 2, map, my_camp ^ 1);
-                    extra.priority += atk_up_enemy.size() * 2;
-                }
-                else
-                {
-                    auto atk_up_enemy = units_in_range(extra.now, 3, map, my_camp ^ 1);
-                    extra.priority += atk_up_enemy.size() * 2;
-                }
-                if (now_distance[3] <= 1)
-                {
-                    extra.type == "attack";
-                    extra.priority *= 2;
-                }
-            }
-            else if (enemy.type == "VolcanoDragon")
-            {
-                if (now_distance[3] <= 3)
-                {
-                    extra.target = "my_miracle";
-                }
-                else if (checkBarrack(enemy_barrack) != my_camp ^ 1 && history_distance[1] > now_distance[1])
-                {
-                    extra.target = "enemy_barrack";
-                }
-                else if (checkBarrack(my_barrack) != my_camp ^ 1 && history_distance[2] > now_distance[2])
+                else if (closest == 2)
                 {
                     extra.target = "my_barrack";
                 }
-                extra.type == "attack";
-                extra.priority = enemy.level + enemy.atk;
-                if (now_distance[3] <= 2)
-                    extra.priority += enemy.atk * 10;
-            }
-            else if (enemy.type == "Inferno")
-            {
-                if (cube_distance(extra.now, miracle_pos) <= 3)
-                {
-                    extra.type == "attack";
-                    extra.priority = 100;
-                }
-                else
-                {
-                    extra.type == "avoid";
-                    extra.priority = 2;
-                }
-            }
-            else if (enemy.type == "FrostDragon")
-            {
-                if (now_distance[3] <= 3)
+                else if (closest == 3)
                 {
                     extra.target = "my_miracle";
                 }
-                else if (checkBarrack(enemy_barrack) != my_camp ^ 1 && history_distance[1] > now_distance[1])
-                {
-                    extra.target = "enemy_barrack";
-                }
-                else if (checkBarrack(my_barrack) != my_camp ^ 1 && history_distance[2] > now_distance[2])
-                {
-                    extra.target = "my_barrack";
-                }
-                extra.type == "attack";
-                extra.priority = enemy.level + enemy.atk;
-                if (now_distance[3] <= 2)
-                    extra.priority += enemy.atk * 10;
             }
         }
-        
     }
 }
 
@@ -882,30 +753,21 @@ void AI::creat_unit(const string &type)
     }
 }
 
-Pos AI::counter(vector<Pos>& pos_list, string type, int number, int range)
+Pos AI::counter(vector<Pos>& pos_list, string type)
 {
     std::map<Pos, int> map_counter;
-    if (type == "most_enermy")
-    {
-        for (auto pos : pos_list)
-        {
-            auto unit_list = units_in_range(pos, range, map, my_camp^1);
-            map_counter[pos] = unit_list.size();
-        }
-    }
-
-    else if (type == "inferno_flame")
+    if (type == "inferno_flame")
     {
         for (auto pos : pos_list)
         {
             int score = 0;
-            auto unit_list = units_in_range(pos, range, map, my_camp ^ 1);
+            auto unit_list = units_in_range(pos, 2, map, my_camp ^ 1);
             for(auto unit:unit_list)
             {
-                if (unit.hp <= number)
+                if (unit.hp <= 2)
                     score += unit.level * ENEMY_DEATH;
                 else
-                    score += number * ENEMY_HURT;
+                    score += 2 * ENEMY_HURT;
             }
             score += (20 - cube_distance(pos, enemy_miracle_pos)) * ENEMY_MIRCLE;
             map_counter[pos] = score;
@@ -1064,8 +926,9 @@ void AI::use_inferno()
             if (canUseArtifact(players[my_camp].artifact[0], pos, my_camp))
                 postions.push_back(pos);
         }
-        Pos decide_pos = counter(postions, "inferno_flame", 2, 2);
+        Pos decide_pos = counter(postions, "inferno_flame");
         use(players[my_camp].artifact[0].id, decide_pos);
+        sign_unit(2);
     }
 }
 
