@@ -471,7 +471,7 @@ void AI::march_before_battle(const string &type) //处理不得不移动的部�
                 }
             }
 
-            if (decide_pos != miracle_pos)
+            if (decide_pos != miracle_pos && decide_pos != ally.pos)
                 move(ally.id, decide_pos);
         }
     }
@@ -633,8 +633,11 @@ void AI::battle(const string &type)
                 break;
             struct unit_info &ally_extra = unit_extra_info[ally.id];
             int attack_id = -1;
-
-            if (ally_extra.des == 1)
+            if (ally_extra.type == "can_not_move")
+            {
+                attack_id = which_to_attack("atk_anyway", ally);
+            }
+            else if (ally_extra.des == 1)
             {
                 attack_id = which_to_attack("close", ally);
             }
@@ -763,7 +766,63 @@ void AI::battle(const string &type)
 
 void AI::march_after_battle(const string &type)
 {
-    
+    if (type == "attack")
+    {
+        auto ally_list = getUnitsByCamp(my_camp);
+        auto enemy_list = getUnitsByCamp(my_camp ^ 1);
+        auto cmp = [](const Unit &unit1, const Unit &unit2) {
+            if (unit1.can_move != unit2.can_move) //首先要能动
+                return unit2.can_move < unit1.can_move;
+            else if (unit1.type != unit2.type)
+            { //地狱犬>冰龙>弓箭手>牧师
+                auto type_id_gen = [](const string &type_name) {
+                    if (type_name == "Inferno")
+                        return 0;
+                    if (type_name == "FrostDragon")
+                        return 1;
+                    else if (type_name == "Archer")
+                        return 2;
+                    else
+                        return 3;
+                };
+                return (type_id_gen(unit1.type) < type_id_gen(unit2.type));
+            }
+            else
+                return unit2.atk < unit1.atk;
+        };
+
+        sort(ally_list.begin(), ally_list.end(), cmp);
+
+        for (const auto &ally : ally_list)
+        {
+            if (!ally.can_move)
+                break;
+            struct unit_info &ally_extra = unit_extra_info[ally.id];
+            Pos decide_pos = miracle_pos;
+
+            //获取所有可到达的位置
+            auto reach_pos_with_dis = reachable(ally, map);
+            //压平
+            vector<Pos> reach_pos_list;
+            for (const auto &reach_pos : reach_pos_with_dis)
+            {
+                for (auto pos : reach_pos)
+                    reach_pos_list.push_back(pos);
+            }
+            if (reach_pos_list.empty())
+            {
+                ally_extra.type = "can_not_move";
+                continue;
+            }
+            else
+            {
+                decide_pos = counter(reach_pos_list, "attack", ally);
+            }
+
+            if (decide_pos != miracle_pos && decide_pos != ally.pos)
+                move(ally.id, decide_pos);
+        }
+    }
     //处理生物的移动
 
     /*
@@ -863,68 +922,211 @@ void AI::creat_unit(const string &type)
     //最后进行召唤
     if (type == "attack")
     {
-        //将所有本方出兵点按照到对方基地的距离排序，从近到远出兵
-        auto summon_pos_list = getSummonPosByCamp(my_camp);
-        sort(summon_pos_list.begin(), summon_pos_list.end(), [this](Pos _pos1, Pos _pos2) {
-            return cube_distance(_pos1, enemy_miracle_pos) < cube_distance(_pos2, enemy_miracle_pos);
-        });
-        vector<Pos> available_summon_pos_list;
-        for (auto pos : summon_pos_list)
-        {
-            auto unit_on_pos_ground = getUnitByPos(pos, false);
-            if (unit_on_pos_ground.id == -1)
-                available_summon_pos_list.push_back(pos);
-        }
-
         //统计各个生物的可用数量，在假设出兵点无限的情况下，按照1个剑士、1个弓箭手、1个火山龙的顺序召唤
         int mana = players[my_camp].mana;
         auto deck = players[my_camp].creature_capacity;
+        auto ally_list = getUnitsByCamp(my_camp);
+        auto enemy_list = getUnitsByCamp(my_camp ^ 1);
+
         ::map<string, int> available_count;
+        int sum_count = 0;
         for (const auto &card_unit : deck)
+        {
             available_count[card_unit.type] = card_unit.available_count;
+            sum_count += card_unit.available_count;
+        }
+
+        //送塔设计
+        if (sum_count < 3)
+        {
+            auto cmp = [](const Unit &unit1, const Unit &unit2) {
+                return unit2.id < unit1.id;
+            };
+
+            sort(ally_list.begin(), ally_list.end(), cmp);
+
+            for (int i = sum_count; i <= 3; i++) //保留三张单位,卖掉最初的单位
+            {
+                struct unit_info &ally_extra = unit_extra_info[ally_list[3 - i].id];
+                ally_extra.des = 2;
+            }
+        }
+
+        //顺序：保护神迹->占领我方出兵点->占领对面出兵点->攻击对面神迹，简化为出兵点排序顺序和任务指派
+        int priority_my_miracle = 0, priority_my_barrack = 0, priority_enemy_barrack = 0, priority_enemy_miracle = 0;
+        auto summon_pos_list = getSummonPosByCamp(my_camp);
+        vector<Pos> available_summon_pos_list;
+        int des = 0;
+        Pos destination = miracle_pos;
+
+        //扫描我方神迹附近威胁
+        for (auto enemy : enemy_list)
+        {
+            struct unit_info &enemy_extra = unit_extra_info[enemy.id];
+            if (enemy_extra.target == "my_miracle")
+                priority_my_miracle += enemy_extra.priority;
+            else if (enemy_extra.target == "my_barrack")
+                priority_my_barrack += enemy_extra.priority;
+            else if (enemy_extra.target == "enemy_barrack")
+                priority_enemy_barrack += enemy_extra.priority;
+            else if (enemy_extra.target == "enemy_miracle")
+                priority_enemy_miracle += enemy_extra.priority;
+        }
+
+        for (auto ally : ally_list)
+        {
+            struct unit_info &ally_extra = unit_extra_info[ally.id];
+            if (ally_extra.des == 3)
+                priority_my_miracle -= ally.atk * 2;
+            else if (ally_extra.des == 4)
+                priority_my_barrack -= ally.atk * 2;
+            else if (ally_extra.des == 5)
+                priority_enemy_barrack -= ally.atk * 2;
+            else if (ally_extra.des == 2)
+                priority_enemy_miracle -= ally.atk * 2;
+        }
+        //我方单位目标 des=1,占领destination;des=2,直线进攻基地;des=3，保护神迹；des=4,保护我方驻扎点；des=5，保护对方驻扎点
+        if (priority_my_miracle > 0) //基地有危险
+        {
+            //将所有本方出兵点按照到我方神迹的距离排序，从近到远出兵
+            sort(summon_pos_list.begin(), summon_pos_list.end(), [this](Pos _pos1, Pos _pos2) {
+                return cube_distance(_pos1, miracle_pos) < cube_distance(_pos2, miracle_pos);
+            });
+            for (auto pos : summon_pos_list)
+            {
+                auto unit_on_pos_ground = getUnitByPos(pos, false);
+                if (unit_on_pos_ground.id == -1)
+                    available_summon_pos_list.push_back(pos);
+            }
+            des = 3;
+        }
+
+        else if (checkBarrack(my_barrack) != my_camp) //召唤生物占领我方出兵点
+        {
+            //将所有本方出兵点按照到我方出兵点的距离排序，从近到远出兵
+            sort(summon_pos_list.begin(), summon_pos_list.end(), [this](Pos _pos1, Pos _pos2) {
+                return cube_distance(_pos1, my_barrack) < cube_distance(_pos2, my_barrack);
+            });
+            for (auto pos : summon_pos_list)
+            {
+                auto unit_on_pos_ground = getUnitByPos(pos, false);
+                if (unit_on_pos_ground.id == -1)
+                    available_summon_pos_list.push_back(pos);
+            }
+            des = 1;
+            destination = my_barrack;
+        }
+
+        else if (checkBarrack(my_barrack) == my_camp && priority_my_barrack > 0) //召唤生物占领我方出兵点
+        {
+            //将所有本方出兵点按照到我方出兵点的距离排序，从近到远出兵
+            sort(summon_pos_list.begin(), summon_pos_list.end(), [this](Pos _pos1, Pos _pos2) {
+                return cube_distance(_pos1, my_barrack) < cube_distance(_pos2, my_barrack);
+            });
+            for (auto pos : summon_pos_list)
+            {
+                auto unit_on_pos_ground = getUnitByPos(pos, false);
+                if (unit_on_pos_ground.id == -1)
+                    available_summon_pos_list.push_back(pos);
+            }
+            des = 4;
+        }
+
+        else if (checkBarrack(enemy_barrack) != my_camp) //召唤生物占领敌方出兵点
+        {
+            //将所有本方出兵点按照到对方出兵点的距离排序，从近到远出兵
+            sort(summon_pos_list.begin(), summon_pos_list.end(), [this](Pos _pos1, Pos _pos2) {
+                return cube_distance(_pos1, enemy_barrack) < cube_distance(_pos2, enemy_barrack);
+            });
+            for (auto pos : summon_pos_list)
+            {
+                auto unit_on_pos_ground = getUnitByPos(pos, false);
+                if (unit_on_pos_ground.id == -1)
+                    available_summon_pos_list.push_back(pos);
+            }
+            des = 1;
+            destination = enemy_barrack;
+        }
+
+        else if (checkBarrack(enemy_barrack) == my_camp && priority_enemy_barrack > 0) //召唤生物占领敌方出兵点
+        {
+            //将所有本方出兵点按照到对方出兵点的距离排序，从近到远出兵
+            sort(summon_pos_list.begin(), summon_pos_list.end(), [this](Pos _pos1, Pos _pos2) {
+                return cube_distance(_pos1, enemy_barrack) < cube_distance(_pos2, enemy_barrack);
+            });
+            for (auto pos : summon_pos_list)
+            {
+                auto unit_on_pos_ground = getUnitByPos(pos, false);
+                if (unit_on_pos_ground.id == -1)
+                    available_summon_pos_list.push_back(pos);
+            }
+            des = 5;
+        }
+
+        //无事可做就进攻对面神迹
+        else
+        {
+            //将所有本方出兵点按照到对方神迹的距离排序，从近到远出兵
+            sort(summon_pos_list.begin(), summon_pos_list.end(), [this](Pos _pos1, Pos _pos2) {
+                return cube_distance(_pos1, enemy_miracle_pos) < cube_distance(_pos2, enemy_miracle_pos);
+            });
+            for (auto pos : summon_pos_list)
+            {
+                auto unit_on_pos_ground = getUnitByPos(pos, false);
+                if (unit_on_pos_ground.id == -1)
+                    available_summon_pos_list.push_back(pos);
+            }
+            des = 0;
+        }
 
         vector<string> summon_list;
-        //剑士和弓箭手数量不足或者格子不足则召唤火山龙
-        if ((available_summon_pos_list.size() == 1 || available_count["Swordsman"] + available_count["Archer"] < 2) &&
-            mana >= CARD_DICT.at("VolcanoDragon")[1].cost && available_count["VolcanoDragon"] > 0)
+        vector<int> summon_list_level;
+        //等级从高到低
+        for (int i = 3; i >= 1;i--)
         {
-            summon_list.emplace_back("VolcanoDragon");
-            mana -= CARD_DICT.at("VolcanoDragon")[1].cost;
-        }
-
-        bool suc = true;
-        while (mana >= 2 && suc)
-        {
-            suc = false;
-            if (available_count["Swordsman"] > 0 && mana >= CARD_DICT.at("Swordsman")[1].cost)
+            int flag = 0;
+            //my_creatures = {"Archer", "Priest", "FrostDragon"};
+            //优先召唤牧师
+            if (available_count["Priest"] > 0 && mana >= CARD_DICT.at("Priest")[i].cost)
             {
-                summon_list.emplace_back("Swordsman");
-                mana -= CARD_DICT.at("Swordsman")[1].cost;
-                available_count["Swordsman"] -= 1;
-                suc = true;
+                summon_list.emplace_back("Priest");
+                summon_list_level.emplace_back(i);
+                mana -= CARD_DICT.at("Priest")[i].cost;
+                available_count["Priest"] -= 1;
+                flag = 1;
             }
-            if (available_count["Archer"] > 0 && mana >= CARD_DICT.at("Archer")[1].cost)
+            //其次是冰龙
+            if (available_count["FrostDragon"] > 0 && mana >= CARD_DICT.at("FrostDragon")[i].cost)
+            {
+                summon_list.emplace_back("FrostDragon");
+                summon_list_level.emplace_back(i);
+                mana -= CARD_DICT.at("FrostDragon")[i].cost;
+                available_count["FrostDragon"] -= 1;
+                flag = 1;
+            }
+            //最后是弓箭手
+            if (available_count["Archer"] > 0 && mana >= CARD_DICT.at("Archer")[i].cost)
             {
                 summon_list.emplace_back("Archer");
-                mana -= CARD_DICT.at("Archer")[1].cost;
+                summon_list_level.emplace_back(i);
+                mana -= CARD_DICT.at("Archer")[i].cost;
                 available_count["Archer"] -= 1;
-                suc = true;
+                flag = 1;
             }
-            if (available_count["VolcanoDragon"] > 0 && mana >= CARD_DICT.at("VolcanoDragon")[1].cost)
-            {
-                summon_list.emplace_back("VolcanoDragon");
-                mana -= CARD_DICT.at("VolcanoDragon")[1].cost;
-                available_count["VolcanoDragon"] -= 1;
-                suc = true;
-            }
+            if(flag)
+                i++;
         }
-
+        
         int i = 0;
         for (auto pos : available_summon_pos_list)
         {
             if (i == summon_list.size())
                 break;
-            summon(summon_list[i], 1, pos);
+            summon(summon_list[i], summon_list_level[i], pos);
+            if(destination!=miracle_pos)
+                sign_unit(des, destination);
+            else
+                sign_unit(des);
             ++i;
         }
     }
@@ -950,6 +1152,10 @@ int AI::which_to_attack(string type, Unit &ally)
         }
         else
             max_benefit = 10;
+    }
+    else if (type == "atk_anyway")
+    {
+        max_benefit = -9999;
     }
 
     for (const auto &enemy : enemy_list)
@@ -981,7 +1187,7 @@ int AI::which_to_attack(string type, Unit &ally)
                 int dis = cube_distance(enemy.pos, my_barrack);
                 if (enemy.max_move <= dis)
                 {
-                    if(getUnitByPos(my_barrack,false).id==-1)
+                    if (getUnitByPos(my_barrack, false).id == -1)
                         return enemy.id;
                     else
                         benefit += 2 * enemy.atk;
