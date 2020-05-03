@@ -23,12 +23,12 @@ using card::CARD_DICT;
 
 using std::default_random_engine;
 using std::get;
+using std::list;
 using std::make_tuple;
 using std::map;
 using std::string;
 using std::uniform_int_distribution;
 using std::vector;
-using std::list;
 
 struct unit_info
 {
@@ -58,15 +58,14 @@ struct unit_info
         priority = 0;
         des = 0;
     }
-    int creat_time;             //创建时间
+    int creat_time; //创建时间
     int priority;
-    std::list<Pos> history;     //历史路径
+    std::list<Pos> history; //历史路径
     Pos now;
-    string target;              //预测行为
-    string type;                //分配对策
-    int des;                    //我方单位目标 des=1,占领destination;des=2,直线进攻基地;des=3，保护神迹；des=4,保护我方驻扎点；des=5，保护对方驻扎点
+    string target; //预测行为
+    string type;   //分配对策
+    int des;       //我方单位目标 des=1,占领destination;des=2,直线进攻基地;des=3，保护神迹；des=4,保护我方驻扎点；des=5，保护对方驻扎点
     Pos destination;
-
 };
 
 struct trends
@@ -96,7 +95,9 @@ private:
 
     Pos counter(vector<Pos> &pos_list, string type);
 
-    Pos counter(vector<Pos> &pos_list, string type, Unit my_unit);
+    Pos counter(vector<Pos> &pos_list, string type, Unit &my_unit);
+
+    int which_to_attack(string type, Unit &ally);
 
     void sign_unit(int d);
 
@@ -123,21 +124,21 @@ public:
     void battle(const string &type); //处理生物的战斗
 
     void play(); //玩家需要编写的ai操作函数
-
-    
 };
 
 void AI::sign_unit(int d)
 {
     int id = map.units[map.units.size() - 1].id;
     unit_extra_info[id].des = d;
+    unit_extra_info[id].creat_time = round;
 }
 
-void AI::sign_unit(int d,const Pos& dest)
+void AI::sign_unit(int d, const Pos &dest)
 {
     int id = map.units[map.units.size() - 1].id;
     unit_extra_info[id].des = d;
     unit_extra_info[id].destination = dest;
+    unit_extra_info[id].creat_time = round;
 }
 
 void AI::chooseCards()
@@ -163,7 +164,6 @@ void AI::chooseCards()
         my_creatures = {"Archer", "Priest", "FrostDragon"};
         init();
     }
-        
 }
 
 void AI::play()
@@ -180,7 +180,7 @@ void AI::play()
     if (round == 0 || round == 1)
     {
         //先确定自己的基地、对方的基地
-        if (my_camp==0)
+        if (my_camp == 0)
         {
             miracle_pos = map.miracles[0].pos;
             enemy_miracle_pos = map.miracles[1].pos;
@@ -209,8 +209,8 @@ void AI::play()
         */
 
         // 在正中心偏右召唤一个牧师，用来抢占驻扎点
-        summon("Priest", 1, posShift(miracle_pos, "SF",1));
-        sign_unit(1,my_barrack);
+        summon("Priest", 1, posShift(miracle_pos, "SF", 1));
+        sign_unit(1, my_barrack);
     }
     else
     {
@@ -226,20 +226,19 @@ void AI::play()
         march_after_battle("attack");
 
         creat_unit("attack");
-
     }
-        endRound();
+    endRound();
 }
 
 void AI::scan_enemy()
 {
-    
-    auto enemy_list = getUnitsByCamp(my_camp^1);
+
+    auto enemy_list = getUnitsByCamp(my_camp ^ 1);
 
     for (const auto &enemy : enemy_list)
     {
         struct unit_info &extra = unit_extra_info.at(enemy.id);
-        if(extra.creat_time == -1)
+        if (extra.creat_time == -1)
         {
             extra.creat_time = round;
             extra.now = enemy.pos;
@@ -261,7 +260,7 @@ void AI::scan_enemy()
             else if (enemy.type == "Priest")
             {
                 extra.type = "attack";
-                if(enemy.level==1)
+                if (enemy.level == 1)
                 {
                     auto atk_up_enemy = units_in_range(extra.now, 2, map, my_camp ^ 1);
                     extra.priority = atk_up_enemy.size() - 1;
@@ -279,7 +278,7 @@ void AI::scan_enemy()
             }
             else if (enemy.type == "Inferno")
             {
-                if(cube_distance(extra.now,miracle_pos)<=3)
+                if (cube_distance(extra.now, miracle_pos) <= 3)
                 {
                     extra.type = "attack";
                     extra.target = "my_miracle";
@@ -289,7 +288,7 @@ void AI::scan_enemy()
                 {
                     extra.type = "avoid";
                     extra.priority = 2;
-                }   
+                }
             }
             else if (enemy.type == "FrostDragon")
             {
@@ -348,11 +347,134 @@ void AI::scan_enemy()
             }
         }
     }
+
+    auto ally_list = getUnitsByCamp(my_camp);
+    for (const auto &ally : ally_list)
+    {
+        struct unit_info &ally_extra = unit_extra_info[ally.id];
+        //我方单位目标 des=1,占领destination;des=2,直线进攻基地;des=3，保护神迹；des=4,保护我方驻扎点；des=5，保护对方驻扎点
+        if (ally_extra.des == 1)
+        {
+            Unit pos_unit = getUnitByPos(ally_extra.destination);
+            if (pos_unit.id != -1 && pos_unit.camp == my_camp)
+            {
+                ally_extra.des = 0;
+            }
+        }
+
+        else if (ally_extra.des == 2)
+        {
+            //do_nothing
+        }
+
+        else if (ally_extra.des == 3)
+        {
+            //do_nothing
+        }
+
+        else if (ally_extra.des == 4)
+        {
+            if (checkBarrack(my_barrack) != my_camp)
+            {
+                ally_extra.des = 1;
+                ally_extra.destination = my_barrack;
+            }
+        }
+
+        else if (ally_extra.des == 5)
+        {
+            if (checkBarrack(enemy_barrack) != my_camp)
+            {
+                ally_extra.des = 1;
+                ally_extra.destination = enemy_barrack;
+            }
+        }
+    }
 }
 
 void AI::march_before_battle(const string &type) //处理不得不移动的部分——占点/冲塔；简单策略：能占到目标点/被不能被攻击到的人打掉的血量最小且小于HP
 {
+    if (type == "attack")
+    {
+        auto ally_list = getUnitsByCamp(my_camp);
+        auto enemy_list = getUnitsByCamp(my_camp ^ 1);
+        auto cmp = [](const Unit &unit1, const Unit &unit2) {
+            if (unit1.can_move != unit2.can_move) //首先要能动
+                return unit2.can_move < unit1.can_move;
+            else if (unit1.type != unit2.type)
+            { //地狱犬>冰龙>弓箭手>牧师
+                auto type_id_gen = [](const string &type_name) {
+                    if (type_name == "Inferno")
+                        return 0;
+                    if (type_name == "FrostDragon")
+                        return 1;
+                    else if (type_name == "Archer")
+                        return 2;
+                    else
+                        return 3;
+                };
+                return (type_id_gen(unit1.type) < type_id_gen(unit2.type));
+            }
+            else
+                return unit2.atk < unit1.atk;
+        };
 
+        sort(ally_list.begin(), ally_list.end(), cmp);
+
+        for (const auto &ally : ally_list)
+        {
+            if (!ally.can_move)
+                break;
+            struct unit_info &ally_extra = unit_extra_info[ally.id];
+            Pos decide_pos = miracle_pos;
+
+            //获取所有可到达的位置
+            auto reach_pos_with_dis = reachable(ally, map);
+            //压平
+            vector<Pos> reach_pos_list;
+            for (const auto &reach_pos : reach_pos_with_dis)
+            {
+                for (auto pos : reach_pos)
+                    reach_pos_list.push_back(pos);
+            }
+            if (reach_pos_list.empty())
+            {
+                ally_extra.type = "can_not_move";
+                continue;
+            }
+            else
+            {
+                //我方单位目标 des=1,占领destination;des=2,直线进攻基地;des=3，保护神迹；des=4,保护我方驻扎点；des=5，保护对方驻扎点
+                if (ally_extra.des == 1)
+                {
+                    decide_pos = counter(reach_pos_list, "close", ally);
+                }
+
+                else if (ally_extra.des == 2)
+                {
+                    decide_pos = counter(reach_pos_list, "atk_miracle", ally);
+                }
+
+                else if (ally_extra.des == 3)
+                {
+                    decide_pos = counter(reach_pos_list, "protect_miracle", ally);
+                }
+
+                else if (ally_extra.des == 4)
+                {
+                    decide_pos = counter(reach_pos_list, "protect_my_barrack", ally);
+                }
+
+                else if (ally_extra.des == 5)
+                {
+                    decide_pos = counter(reach_pos_list, "protect_enemy_barrack", ally);
+                }
+            }
+
+            if (decide_pos != miracle_pos)
+                move(ally.id, decide_pos);
+        }
+    }
     /*
     if(type == "attack")
     {
@@ -484,16 +606,66 @@ void AI::march_before_battle(const string &type) //处理不得不移动的部�
             
         }
     }*/
-    
-}
-
-void AI::march_after_battle(const string &type)
-{
-
 }
 
 void AI::battle(const string &type)
 {
+    if (type == "attack")
+    {
+        auto ally_list = getUnitsByCamp(my_camp);
+        auto enemy_list = getUnitsByCamp(my_camp ^ 1);
+
+        //这里直接从攻击力大到小排序
+        auto cmp = [](const Unit &unit1, const Unit &unit2) {
+            if (unit1.can_atk != unit2.can_atk) //首先要能打
+                return unit2.can_atk < unit1.can_atk;
+            else if (unit2.atk == unit1.atk)
+                return unit2.max_hp < unit1.max_hp; //攻击力相同优先血量高的（好像不能算距离）
+            else
+                return unit2.atk < unit1.atk； //优先攻击力高的
+        };
+
+        sort(ally_list.begin(), ally_list.end(), cmp);
+
+        for (const auto &ally : ally_list)
+        {
+            if (!ally.can_atk)
+                break;
+            struct unit_info &ally_extra = unit_extra_info[ally.id];
+            int attack_id = -1;
+
+            if (ally_extra.des == 1)
+            {
+                attack_id = which_to_attack("close", ally);
+            }
+
+            else if (ally_extra.des == 2)
+            {
+                attack_id = which_to_attack("atk_miracle", ally);
+            }
+
+            else if (ally_extra.des == 3)
+            {
+                attack_id = which_to_attack("protect_miracle", ally);
+            }
+
+            else if (ally_extra.des == 4)
+            {
+                attack_id = which_to_attack("protect_my_barrack", ally);
+            }
+
+            else if (ally_extra.des == 5)
+            {
+                attack_id = which_to_attack("protect_enemy_barrack", ally);
+            }
+            else
+            {
+                attack_id = which_to_attack("attack", ally);
+            }
+            if (attack_id != -1)
+                attack(ally.id, attack_id);
+        }
+    }
     //处理生物的战斗
 
     /*
@@ -507,6 +679,7 @@ void AI::battle(const string &type)
      * 一些生物不攻击而移动，或完全不动，可能能带来更大的威慑力，而赢得更多优势
      */
 
+    /*
     auto ally_list = getUnitsByCamp(my_camp);
 
     //自定义排列顺序
@@ -585,10 +758,12 @@ void AI::battle(const string &type)
         if (ally.atk_range[0] <= dis && dis <= ally.atk_range[1])
             attack(ally.id, my_camp ^ 1);
     }
+    */
 }
 
 void AI::march_after_battle(const string &type)
 {
+    
     //处理生物的移动
 
     /*
@@ -599,6 +774,7 @@ void AI::march_after_battle(const string &type)
      * 在移动的时候可以考虑一下避开敌方生物攻击范围实现、为己方强力生物让路、堵住敌方出兵点等策略
      * 如果采用其他生物组合，可以考虑抢占更多驻扎点
      */
+    /*
     auto ally_list = getUnitsByCamp(my_camp);
     sort(ally_list.begin(), ally_list.end(), [](const Unit &_unit1, const Unit &_unit2) {
         auto type_id_gen = [](const string &type_name) {
@@ -679,12 +855,13 @@ void AI::march_after_battle(const string &type)
             }
         }
     }
+    */
 }
 
 void AI::creat_unit(const string &type)
 {
     //最后进行召唤
-    if(type == "attack")
+    if (type == "attack")
     {
         //将所有本方出兵点按照到对方基地的距离排序，从近到远出兵
         auto summon_pos_list = getSummonPosByCamp(my_camp);
@@ -753,7 +930,199 @@ void AI::creat_unit(const string &type)
     }
 }
 
-Pos AI::counter(vector<Pos>& pos_list, string type)
+int AI::which_to_attack(string type, Unit &ally)
+{
+    auto enemy_list = getUnitsByCamp(my_camp ^ 1);
+    vector<Unit> target_list;
+    std::map<int, int> target_id_counter;
+    int health_decrease = 0, de_benefit = 0;
+    int best_target = -1;
+    int max_benefit = -1;
+
+    if (type == "close")
+        max_benefit = 5;
+    else if (type == "atk_miracle")
+    {
+        int dis = cube_distance(ally.pos, enemy_miracle_pos);
+        if (ally.atk_range[0] <= dis && dis <= ally.atk_range[1])
+        {
+            return my_camp ^ 1;
+        }
+        else
+            max_benefit = 10;
+    }
+
+    for (const auto &enemy : enemy_list)
+    {
+        if (AiClient::canAttack(ally, enemy))
+        {
+            target_id_counter[enemy.id] = 0;
+            target_list.push_back(enemy);
+
+            int benefit = 0;
+            int health = ally.hp;
+            struct unit_info &enemy_extra = unit_extra_info[enemy.id];
+
+            if (type == "protect_miracle")
+            {
+                int dis = cube_distance(enemy.pos, miracle_pos);
+                if (enemy.atk_range[0] <= dis && dis <= enemy.atk_range[1])
+                {
+                    return enemy.id;
+                }
+                else if (dis <= enemy.atk_range[1] + enemy.max_move)
+                {
+                    benefit += 2 * enemy.atk;
+                }
+            }
+
+            else if (type == "protect_my_barrack")
+            {
+                int dis = cube_distance(enemy.pos, my_barrack);
+                if (enemy.max_move <= dis)
+                {
+                    if(getUnitByPos(my_barrack,false).id==-1)
+                        return enemy.id;
+                    else
+                        benefit += 2 * enemy.atk;
+                }
+            }
+            else if (type == "protect_enemy_barrack")
+            {
+                int dis = cube_distance(enemy.pos, enemy_barrack);
+                if (enemy.max_move <= dis)
+                {
+                    if (getUnitByPos(enemy_barrack, false).id == -1)
+                        return enemy.id;
+                    else
+                        benefit += 2 * enemy.atk;
+                }
+            }
+
+            if (ally.atk >= enemy.hp)
+            {
+                benefit += enemy_extra.priority * enemy.level;
+            }
+
+            else
+            {
+                benefit += ally.atk * enemy.level;
+            }
+
+            if (AiClient::canAttack(enemy, ally))
+            {
+                health -= enemy.atk;
+                if (enemy.atk >= ally.hp)
+                {
+                    benefit -= ally.hp * ally.level;
+                }
+                else
+                {
+                    benefit -= enemy.atk * ally.level;
+                }
+            }
+
+            if (health > 0)
+            {
+                //考虑下回合
+                for (const auto &enemy_next_round : enemy_list)
+                {
+                    struct unit_info &enemy_next_round_extra = unit_extra_info[enemy_next_round.id];
+
+                    if (AiClient::canAttack(enemy_next_round, ally))
+                    {
+                        if (enemy_next_round.atk >= health)
+                        {
+                            benefit -= health * ally.level;
+                        }
+                        else
+                        {
+                            benefit -= enemy_next_round.atk * ally.level;
+                        }
+
+                        if (AiClient::canAttack(ally, enemy_next_round))
+                        {
+                            if (ally.atk >= enemy_next_round.hp)
+                            {
+                                benefit += enemy_next_round_extra.priority * enemy_next_round.level;
+                            }
+
+                            else
+                            {
+                                benefit += ally.atk * enemy_next_round.level;
+                            }
+                        }
+                        health -= enemy_next_round.atk;
+                        if (health <= 0)
+                            break;
+                    }
+                }
+            }
+
+            target_id_counter[enemy.id] = benefit;
+        }
+    }
+
+    for (auto target : target_list)
+    {
+        if (target_id_counter[target.id] > max_benefit)
+        {
+            best_target = target.id;
+            max_benefit = target_id_counter[target.id];
+        }
+    }
+
+    //考虑神迹
+
+    int dis = cube_distance(ally.pos, enemy_miracle_pos);
+    if (ally.atk_range[0] <= dis && dis <= ally.atk_range[1])
+    {
+        int benefit = 0;
+        benefit = ally.atk * 5;
+        //考虑下回合
+        int health = ally.hp;
+        for (const auto &enemy_next_round : enemy_list)
+        {
+            struct unit_info &enemy_next_round_extra = unit_extra_info[enemy_next_round.id];
+            if (AiClient::canAttack(enemy_next_round, ally))
+            {
+                if (enemy_next_round.atk >= health)
+                {
+                    benefit -= health * ally.level;
+                }
+                else
+                {
+                    benefit -= enemy_next_round.atk * ally.level;
+                }
+
+                if (AiClient::canAttack(ally, enemy_next_round))
+                {
+                    if (ally.atk >= enemy_next_round.hp)
+                    {
+                        benefit += enemy_next_round_extra.priority * enemy_next_round.level;
+                    }
+
+                    else
+                    {
+                        benefit += ally.atk * enemy_next_round.level;
+                    }
+                }
+                health -= enemy_next_round.atk;
+                if (health <= 0)
+                    break;
+            }
+        }
+        if (benefit >= max_benefit)
+        {
+            best_target = my_camp ^ 1;
+            max_benefit = benefit;
+        }
+    }
+
+    return best_target;
+}
+
+Pos AI::counter(vector<Pos> &pos_list, string type)
 {
     std::map<Pos, int> map_counter;
     if (type == "inferno_flame")
@@ -762,7 +1131,7 @@ Pos AI::counter(vector<Pos>& pos_list, string type)
         {
             int score = 0;
             auto unit_list = units_in_range(pos, 2, map, my_camp ^ 1);
-            for(auto unit:unit_list)
+            for (auto unit : unit_list)
             {
                 if (unit.hp <= 2)
                     score += unit.level * ENEMY_DEATH;
@@ -788,7 +1157,7 @@ Pos AI::counter(vector<Pos>& pos_list, string type)
     return best_pos;
 }
 
-Pos AI::counter(vector<Pos> &pos_list, string type, Unit my_unit)
+Pos AI::counter(vector<Pos> &pos_list, string type, Unit &my_unit)
 {
     std::map<Pos, int> map_counter;
     struct unit_info &my_extra = unit_extra_info[my_unit.id];
@@ -844,18 +1213,18 @@ Pos AI::counter(vector<Pos> &pos_list, string type, Unit my_unit)
                 my_extra.type = "attack";
                 return my_extra.destination;
             }
-            if (checkBarrack(enemy_barrack)!=my_camp)
+            if (checkBarrack(enemy_barrack) != my_camp)
                 score += (20 - cube_distance(pos, enemy_barrack)) * ENEMY_BARRACK;
-            score += (20 - cube_distance(pos, enemy_miracle_pos)) * ENEMY_MIRCLE; //冲就是了         
+            score += (20 - cube_distance(pos, enemy_miracle_pos)) * ENEMY_MIRCLE; //冲就是了
             map_counter[pos] = score;
         }
     }
 
-    vector<Pos> & enemy_summon= getSummonPosByCamp(my_camp^1);
+    vector<Pos> &enemy_summon = getSummonPosByCamp(my_camp ^ 1);
 
-    for (auto pos : enemy_summon)  //占用对方出兵点
+    for (auto pos : enemy_summon) //占用对方出兵点
     {
-        if(map_counter.find(pos)!=map_counter.end())
+        if (map_counter.find(pos) != map_counter.end())
             map_counter[pos] += 10;
     }
 
@@ -873,7 +1242,7 @@ Pos AI::counter(vector<Pos> &pos_list, string type, Unit my_unit)
     return best_pos;
 }
 
-Pos AI::posShift(Pos pos, string direct,const int& lenth = 1)
+Pos AI::posShift(Pos pos, string direct, const int &lenth = 1)
 {
     /*
      * 对于给定位置，给出按照自己的视角（神迹在最下方）的某个方向移动一步后的位置
