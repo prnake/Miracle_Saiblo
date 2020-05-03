@@ -154,14 +154,14 @@ void AI::chooseCards()
     if (my_camp == 0)
     {
         my_artifacts = {"InfernoFlame"};
-        my_creatures = {"Archer", "Priest", "FrostDragon"};
+        my_creatures = {"Swordsman", "Priest", "FrostDragon"};
         init();
     }
     //后手，选择地狱火，弓箭手，牧师，冰冻龙（后期改动）
     else
     {
         my_artifacts = {"InfernoFlame"};
-        my_creatures = {"Archer", "Priest", "FrostDragon"};
+        my_creatures = {"Swordsman", "Priest", "FrostDragon"};
         init();
     }
 }
@@ -242,12 +242,12 @@ void AI::scan_enemy()
         {
             extra.creat_time = round;
             extra.now = enemy.pos;
-            if (enemy.type == "Archer")
+            if (enemy.type == "Swordsman")
             {
                 extra.type = "attack";
                 extra.priority = enemy.atk;
             }
-            else if (enemy.type == "Archer")
+            else if (enemy.type == "Swordsman")
             {
                 extra.type = "attack";
                 extra.priority = enemy.atk;
@@ -442,7 +442,7 @@ void AI::march_before_battle(const string &type) //处理不得不移动的部�
                         return 0;
                     if (type_name == "FrostDragon")
                         return 1;
-                    else if (type_name == "Archer")
+                    else if (type_name == "Swordsman")
                         return 2;
                     else
                         return 3;
@@ -532,7 +532,7 @@ void AI::march_before_battle(const string &type) //处理不得不移动的部�
                 auto type_id_gen = [](const string &type_name) {
                     if (type_name == "FrostDragon")
                         return 0;
-                    else if (type_name == "Archer")
+                    else if (type_name == "Swordsman")
                         return 1;
                     else
                         return 2;
@@ -598,7 +598,7 @@ void AI::march_before_battle(const string &type) //处理不得不移动的部�
                             unit_extra_info[ally.id].attack_id = tar;
                         }
                     }
-                    else if (ally.type == "Archer")
+                    else if (ally.type == "Swordsman")
                     {
                         nth_element(enemy_list.begin(), enemy_list.begin(), enemy_list.end(),
                                     [](const Unit &_enemy1, const Unit &_enemy2) { return _enemy1.atk < _enemy2.atk; });
@@ -737,14 +737,14 @@ void AI::battle(const string &type)
             auto type_id_gen = [](const string &type_name) {
                 if (type_name == "VolcanoDragon")
                     return 0;
-                else if (type_name == "Archer")
+                else if (type_name == "Swordsman")
                     return 1;
                 else
                     return 2;
             };
             return (type_id_gen(unit1.type) < type_id_gen(unit2.type));
         }
-        else if (unit1.type == "VolcanoDragon" or unit1.type == "Archer")
+        else if (unit1.type == "VolcanoDragon" or unit1.type == "Swordsman")
             return unit2.atk < unit1.atk;
         else
             return unit1.atk < unit2.atk;
@@ -768,13 +768,13 @@ void AI::battle(const string &type)
             int tar = uniform_int_distribution<>(0, target_list.size() - 1)(g);
             attack(ally.id, target_list[tar].id);
         }
-        else if (ally.type == "Archer")
+        else if (ally.type == "Swordsman")
         {
             nth_element(enemy_list.begin(), enemy_list.begin(), enemy_list.end(),
                         [](const Unit &_enemy1, const Unit &_enemy2) { return _enemy1.atk < _enemy2.atk; });
             attack(ally.id, target_list[0].id);
         }
-        else if (ally.type == "Archer")
+        else if (ally.type == "Swordsman")
         {
             sort(enemy_list.begin(), enemy_list.end(),
                  [](const Unit &_enemy1, const Unit &_enemy2) { return _enemy1.atk > _enemy2.atk; });
@@ -895,9 +895,9 @@ void AI::march_after_battle(const string &type)
     auto ally_list = getUnitsByCamp(my_camp);
     sort(ally_list.begin(), ally_list.end(), [](const Unit &_unit1, const Unit &_unit2) {
         auto type_id_gen = [](const string &type_name) {
-            if (type_name == "Archer")
+            if (type_name == "Swordsman")
                 return 0;
-            else if (type_name == "Archer")
+            else if (type_name == "Swordsman")
                 return 1;
             else
                 return 2;
@@ -908,7 +908,7 @@ void AI::march_after_battle(const string &type)
     {
         if (!ally.can_move)
             continue;
-        if (ally.type == "Archer")
+        if (ally.type == "Swordsman")
         {
             //获取所有可到达的位置
             auto reach_pos_with_dis = reachable(ally, map);
@@ -1025,28 +1025,28 @@ void AI::creat_unit(const string &type)
             if (enemy_extra.target == "my_miracle")
             {
                 priority_my_miracle += enemy_extra.priority;
-                if (enemy.type == "BlackBat")
+                if (enemy.flying)
                     need_fly = true;
             }
 
             else if (enemy_extra.target == "my_barrack")
             {
                 priority_my_barrack += enemy_extra.priority;
-                if (enemy.type == "BlackBat")
+                if (enemy.flying)
                     need_fly = true;
             }
 
             else if (enemy_extra.target == "enemy_barrack")
             {
                 priority_enemy_barrack += enemy_extra.priority;
-                if (enemy.type == "BlackBat")
+                if (enemy.flying)
                     need_fly = true;
             }
 
             else if (enemy_extra.target == "enemy_miracle")
             {
                 priority_enemy_miracle += enemy_extra.priority;
-                if (enemy.type == "BlackBat")
+                if (enemy.flying)
                     need_fly = true;
             }
         }
@@ -1078,7 +1078,7 @@ void AI::creat_unit(const string &type)
             }
             des = 3;
 
-            auto near_ally = units_in_range(miracle_pos, 4, map, my_camp);
+            auto near_ally = units_in_range(miracle_pos, 10, map, my_camp);
             for (auto near : near_ally)
             {
                 struct unit_info &near_extra = unit_extra_info[near.id];
@@ -1206,7 +1206,7 @@ void AI::creat_unit(const string &type)
         for (int i = 3; i >= 1; i--)
         {
             int flag = 0;
-            //my_creatures = {"Archer", "Priest", "FrostDragon"};
+            //my_creatures = {"Swordsman", "Priest", "FrostDragon"};
             //优先召唤牧师
             if (available_count["Priest"] > 0 && mana >= CARD_DICT.at("Priest")[i].cost)
             {
@@ -1226,12 +1226,12 @@ void AI::creat_unit(const string &type)
                 flag = 1;
             }
             //最后是弓箭手
-            if (available_count["Archer"] > 0 && mana >= CARD_DICT.at("Archer")[i].cost)
+            if (!need_fly && available_count["Swordsman"] > 0 && mana >= CARD_DICT.at("Swordsman")[i].cost)
             {
-                summon_list.emplace_back("Archer");
+                summon_list.emplace_back("Swordsman");
                 summon_list_level.emplace_back(i);
-                mana -= CARD_DICT.at("Archer")[i].cost;
-                available_count["Archer"] -= 1;
+                mana -= CARD_DICT.at("Swordsman")[i].cost;
+                available_count["Swordsman"] -= 1;
                 flag = 1;
             }
             if (flag)
@@ -1241,6 +1241,16 @@ void AI::creat_unit(const string &type)
         int i = 0;
         for (auto pos : available_summon_pos_list)
         {
+            auto near_enemy = units_in_range(pos, 4, map, my_camp ^ 1);
+            int sum_atk = 0;
+            for (auto enemy : near_enemy)
+            {
+                int dis = cube_distance(pos, enemy.pos);
+                if (dis <= enemy.atk_range[1] && dis >= enemy.atk_range[0])
+                    sum_atk += enemy.atk;
+            }
+            if (sum_atk > 3)
+                continue;
             if (i == summon_list.size())
                 break;
             summon(summon_list[i], summon_list_level[i], pos);
@@ -1262,7 +1272,6 @@ int AI::which_to_attack(string type, const Unit &ally)
     int health_decrease = 0, de_benefit = 0;
     int best_target = -1;
     int max_benefit = -1;
-
 
     if (type == "atk_miracle")
     {
@@ -1501,7 +1510,7 @@ Pos AI::counter(vector<Pos> &pos_list, string type)
                 else
                     score += 2 * ENEMY_HURT;
             }
-            if(checkBarrack(enemy_barrack) == my_camp)
+            if (checkBarrack(enemy_barrack) == my_camp)
                 score += (20 - cube_distance(pos, enemy_miracle_pos)) * ENEMY_MIRCLE;
             map_counter[pos] = score;
         }
@@ -1631,7 +1640,7 @@ Pos AI::counter(vector<Pos> &pos_list, string type, const Unit &my_unit)
         //弓箭手近战
         for (auto unit : unit_list)
         {
-            if (unit.type == "Archer" && cube_distance(unit.pos, pos) <= 1)
+            if (unit.type == "Swordsman" && cube_distance(unit.pos, pos) <= 1)
             {
                 benefit += 10;
             }
@@ -1639,11 +1648,17 @@ Pos AI::counter(vector<Pos> &pos_list, string type, const Unit &my_unit)
 
         if (type == "close")
         {
-            benefit += (20 - cube_distance(pos, my_extra.destination)) * 2;
+            if (cube_distance(pos, enemy_miracle_pos) <= my_unit.atk_range[1] && cube_distance(pos, enemy_miracle_pos) >= my_unit.atk_range[0])
+                benefit += 50;
+            else
+                benefit += (20 - cube_distance(pos, my_extra.destination)) * 2;
         }
         else if (type == "atk_miracle")
         {
-            benefit += (20 - cube_distance(pos, enemy_miracle_pos)) * 5;
+            if (cube_distance(pos, enemy_miracle_pos) <= my_unit.atk_range[1] && cube_distance(pos, enemy_miracle_pos) >= my_unit.atk_range[0])
+                benefit += 1000;
+            else
+                benefit += (20 - cube_distance(pos, enemy_miracle_pos)) * 5;
         }
         else if (type == "protect_miracle")
         {
@@ -1732,7 +1747,7 @@ Pos AI::posShift(Pos pos, string direct, const int &lenth = 1)
 
 void AI::use_inferno()
 {
-    if (players[my_camp].mana >= 8 && players[my_camp].artifact[0].state == "Ready" )
+    if (players[my_camp].mana >= 8 && players[my_camp].artifact[0].state == "Ready")
     {
         auto pos_list = all_pos_in_map();
         vector<Pos> postions;
@@ -1742,7 +1757,7 @@ void AI::use_inferno()
                 postions.push_back(pos);
         }
         Pos decide_pos = counter(postions, "inferno_flame");
-        if(decide_pos!=miracle_pos)
+        if (decide_pos != miracle_pos)
             use(players[my_camp].artifact[0].id, decide_pos);
         sign_unit(2);
     }
