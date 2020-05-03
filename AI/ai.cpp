@@ -1082,7 +1082,7 @@ void AI::creat_unit(const string &type)
         vector<string> summon_list;
         vector<int> summon_list_level;
         //等级从高到低
-        for (int i = 3; i >= 1;i--)
+        for (int i = 3; i >= 1; i--)
         {
             int flag = 0;
             //my_creatures = {"Archer", "Priest", "FrostDragon"};
@@ -1113,17 +1113,17 @@ void AI::creat_unit(const string &type)
                 available_count["Archer"] -= 1;
                 flag = 1;
             }
-            if(flag)
+            if (flag)
                 i++;
         }
-        
+
         int i = 0;
         for (auto pos : available_summon_pos_list)
         {
             if (i == summon_list.size())
                 break;
             summon(summon_list[i], summon_list_level[i], pos);
-            if(destination!=miracle_pos)
+            if (destination != miracle_pos)
                 sign_unit(des, destination);
             else
                 sign_unit(des);
@@ -1363,67 +1363,106 @@ Pos AI::counter(vector<Pos> &pos_list, string type)
     return best_pos;
 }
 
+/*
+//我方单位目标 des=1,占领destination;des=2,直线进攻基地;des=3，保护神迹；des=4,保护我方驻扎点；des=5，保护对方驻扎点
+                if (ally_extra.des == 1)
+                {
+                    decide_pos = counter(reach_pos_list, "close", ally);
+                }
+
+                else if (ally_extra.des == 2)
+                {
+                    decide_pos = counter(reach_pos_list, "atk_miracle", ally);
+                }
+
+                else if (ally_extra.des == 3)
+                {
+                    decide_pos = counter(reach_pos_list, "protect_miracle", ally);
+                }
+
+                else if (ally_extra.des == 4)
+                {
+                    decide_pos = counter(reach_pos_list, "protect_my_barrack", ally);
+                }
+
+                else if (ally_extra.des == 5)
+                {
+                    decide_pos = counter(reach_pos_list, "protect_enemy_barrack", ally);
+*/
+
 Pos AI::counter(vector<Pos> &pos_list, string type, Unit &my_unit)
 {
     std::map<Pos, int> map_counter;
     struct unit_info &my_extra = unit_extra_info[my_unit.id];
 
-    if (type == "attack")
+    for (auto pos : pos_list)
     {
-        for (auto pos : pos_list)
+        int benefit = 0;
+        auto unit_list = units_in_range(pos, 4, map, my_camp ^ 1);
+
+        //特殊情况
+        if (type == "close" && pos==my_extra.destination)
         {
-            int score = 0;
-            if (my_extra.type == "move" && pos == my_extra.destination)
+            return pos;
+        }
+
+        //常规计算，能打到和不被打到
+        for (auto unit : unit_list)
+        {
+            struct unit_info &extra = unit_extra_info[unit.id];
+
+            if (AiClient::canAttack(my_unit, unit)) //我能打到敌人
             {
-                my_extra.type = "attack";
-                return my_extra.destination;
-            }
-            auto unit_list = units_in_range(pos, 4, map, my_camp ^ 1);
-            for (auto unit : unit_list)
-            {
-                struct unit_info &extra = unit_extra_info[unit.id];
-                if (canAttack(my_unit, unit)) //我能打到敌人
+                if (my_unit.atk >= unit.hp)
                 {
-                    score += unit.level * my_unit.atk;
-                    if (my_unit.atk >= unit.hp)
-                        score += unit.level * my_unit.atk;
-                    if (extra.target == "my_miracle")
-                        score += 30;
-                    if (extra.target == "my_barrack")
-                        score += 15;
-                    if (extra.type == "attack")
-                        score += 5;
+                    benefit += extra.priority * unit.level;
                 }
-                if (canAttack(unit, my_unit)) //敌人能打到我
+
+                else
                 {
-                    score -= my_unit.level * unit.atk;
-                    if (unit.atk >= my_unit.hp)
-                        score -= my_unit.level * my_unit.hp;
-                    if (extra.type == "avoid")
-                        score -= 30;
+                    benefit += my_unit.atk * unit.level;
                 }
             }
-            score += (20 - cube_distance(pos, enemy_miracle_pos)) * ENEMY_MIRCLE;
-            if (checkBarrack(enemy_barrack) != my_camp)
-                score += (20 - cube_distance(pos, enemy_barrack)) * ENEMY_BARRACK;
-            map_counter[pos] = score;
-        }
-    }
-    else if (type == "waste")
-    {
-        for (auto pos : pos_list)
-        {
-            int score = 0;
-            if (my_extra.type == "move" && pos == my_extra.destination)
+
+            if (AiClient::canAttack(unit, my_unit))
             {
-                my_extra.type = "attack";
-                return my_extra.destination;
+                if (unit.atk >= my_unit.hp)
+                {
+                    benefit -= my_unit.hp * my_unit.level;
+                }
+                else
+                {
+                    benefit -= unit.atk * my_unit.level;
+                }
+                if (extra.type == "avoid")
+                    benefit -= 100;
             }
-            if (checkBarrack(enemy_barrack) != my_camp)
-                score += (20 - cube_distance(pos, enemy_barrack)) * ENEMY_BARRACK;
-            score += (20 - cube_distance(pos, enemy_miracle_pos)) * ENEMY_MIRCLE; //冲就是了
-            map_counter[pos] = score;
         }
+        if (type == "close")
+        {
+            benefit += (20 - cube_distance(pos, my_extra.destination)) * 10;
+        }
+        else if (type == "atk_miracle")
+        {
+            benefit += (20 - cube_distance(pos, enemy_miracle_pos)) * 20;
+        }
+        else if (type == "protect_miracle")
+        {
+            benefit += (20 - cube_distance(pos, miracle_pos)) * 10;
+        }
+        else if (type == "protect_my_barrack")
+        {
+            benefit += (20 - cube_distance(pos, my_barrack)) * 10;
+        }
+        else if (type == "protect_enemy_barrack")
+        {
+            benefit += (20 - cube_distance(pos, enemy_barrack)) * 10;
+        }
+        else
+        {
+            benefit += (20 - cube_distance(pos, enemy_miracle_pos)) * 5;
+        }
+        map_counter[pos] = benefit;
     }
 
     vector<Pos> &enemy_summon = getSummonPosByCamp(my_camp ^ 1);
@@ -1434,8 +1473,10 @@ Pos AI::counter(vector<Pos> &pos_list, string type, Unit &my_unit)
             map_counter[pos] += 10;
     }
 
-    auto best_pos = pos_list[0];
+    auto best_pos = miracle_pos;
     int max_benefit = 0;
+    if (type == "attack")
+        max_benefit = -9999;
     for (auto pos : pos_list)
     {
         if (map_counter[pos] > max_benefit)
