@@ -24,7 +24,7 @@ public:
     int round;                                                                       // 当前回合
     int my_camp;                                                                     // 己方阵营
     std::vector<std::string> my_artifacts = {"HolyLight"};                           // 己方神器
-    std::vector<std::string> my_creatures = {"Archer", "Swordsman", "VolcanoDragon"}; // 己方生物
+    std::vector<std::string> my_creatures = {"Swordsman", "Swordsman", "VolcanoDragon"}; // 己方生物
 
     AiClient();
 
